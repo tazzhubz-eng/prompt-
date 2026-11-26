@@ -1,0 +1,74 @@
+C# / .NET
+String Encryption / Constant Hiding (mã hóa chuỗi & hằng số)
+
+Cách xử lý: Hook/gọi hàm giải mã lúc runtime, viết deobfuscator bằng dnlib / AsmResolver để thay thế lời gọi bằng giá trị thật, hoặc dùng de4dot / de4dot-cex.
+
+de4dot-cex — [https://github.com/ViRb3/de4dot-cex](https://github.com/ViRb3/de4dot-cex)
+
+dnlib — [https://github.com/0xd4d/dnlib](https://github.com/0xd4d/dnlib)
+
+AsmResolver — [https://github.com/Washi1337/AsmResolver](https://github.com/Washi1337/AsmResolver)
+
+Control Flow Obfuscation (làm rối luồng điều khiển / switch / proxy call)
+
+Cách xử lý: Phân tích đồ thị khối cơ bản (CFG) trong IL, đơn giản hóa nhánh giả và gỡ proxy method bằng tool/plugin cho dnSpyEx hoặc ILSpy.
+
+dnSpyEx — [https://github.com/dnSpyEx/dnSpy](https://github.com/dnSpyEx/dnSpy)
+
+ILSpy — [https://github.com/icsharpcode/ILSpy](https://github.com/icsharpcode/ILSpy)
+
+Packer / Native Stub / Anti-Tamper (nén assembly / bọc stub / chống sửa)
+
+Cách xử lý: Chạy tiến trình tới khi stub giải nén xong vào bộ nhớ rồi dump module đã khôi phục, sửa metadata/header trước khi dịch ngược.
+
+de4dot — [https://github.com/de4dot/de4dot](https://github.com/de4dot/de4dot)
+
+C++ / Native
+Packer / Runtime Compression (nén file thực thi như UPX hoặc custom packer)
+
+Cách xử lý: Đặt breakpoint tại OEP (Original Entry Point) hoặc sau vòng lặp giải nén trong RAM, dump tiến trình và rebuild IAT.
+
+x64dbg — [https://github.com/x64dbg/x64dbg](https://github.com/x64dbg/x64dbg)
+
+Scylla — [https://github.com/NtQuery/Scylla](https://github.com/NtQuery/Scylla)
+
+Anti-Debug / Anti-VM / API Hiding (chống debug & giấu hàm API)
+
+Cách xử lý: Ẩn cờ debugger/PEB/breakpoint khi chạy phân tích và resolve địa chỉ API động.
+
+ScyllaHide — [https://github.com/x64dbg/ScyllaHide](https://github.com/x64dbg/ScyllaHide)
+
+Control Flow Flattening / MBA / VM Obfuscation (làm phẳng luồng, biểu thức toán-logic phức tạp, máy ảo hóa mã)
+
+Cách xử lý: Dùng symbolic/taint analysis hoặc LLVM/IR pass để rút gọn biểu thức và lần dấu handler của VM.
+
+OLLVM — [https://github.com/obfuscator-llvm/obfuscator](https://github.com/obfuscator-llvm/obfuscator)
+
+Triton — [https://github.com/JonathanSalwan/Triton](https://github.com/JonathanSalwan/Triton)
+
+HTML / JS / Web
+Minification / Packing (nén, gộp bundle, eval / packer)
+
+Cách xử lý: Beautify cấu trúc, tách module/bundle và giải nén lớp wrapper.
+
+webcrack — [https://github.com/j4k0xb/webcrack](https://github.com/j4k0xb/webcrack)
+
+js-beautify — [https://github.com/beautifier/js-beautify](https://github.com/beautifier/js-beautify)
+
+String Array / Encoding / Control Flow Obfuscation (mảng chuỗi mã hóa, hex/unicode/XOR, làm rối AST)
+
+Cách xử lý: Phân tích AST, giải mã bảng chuỗi, tính trước hằng số và gỡ logic điều khiển giả.
+
+synchrony — [https://github.com/relative/synchrony](https://github.com/relative/synchrony)
+
+restringer — [https://github.com/PerimeterX/restringer](https://github.com/PerimeterX/restringer)
+
+Script / Bytecode (Lua / LuaJIT / Luau)
+Bytecode / Chunk / VM Obfuscation (biên dịch sang bytecode hoặc bọc trong VM script)
+
+Cách xử lý: Dịch ngược bytecode về mã nguồn hoặc phân tích opcode/constant table của VM tương ứng.
+
+unluac — [https://github.com/HansWessels/unluac](https://github.com/HansWessels/unluac)
+
+LuaJIT Decompiler — [https://github.com/MarsHard/luajit-decompiler](https://github.com/MarsHard/luajit-decompiler)
+và các cái khác tùy mã hóa bạn phân tích đc 
