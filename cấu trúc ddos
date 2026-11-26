@@ -1,0 +1,208 @@
+PHẦN 0 — Khung tư duy: DDoS là bài toán tài nguyên
+Mọi DDoS, bất kể tầng nào, đều là một phương trình:
+
+text
+Tài nguyên nạn nhân (băng thông, socket, RAM, CPU, thread, kết nối đồng thời, bảng trạng thái)
+        <
+Tài nguyên kẻ tấn công huy động được (băng thông, số bot, tỷ lệ khuếch đại, số kết nối giả)
+Ba trục để phân loại bất kỳ cuộc tấn công nào:
+
+Trục	Câu hỏi	Ý nghĩa
+Tầng	Tấn công ở L3, L4, hay L7?	Quyết định thiết bị nào bị vắt kiệt (router, firewall, server)
+Cơ chế	Volumetric, state-exhaustion, hay logic-abuse?	Quyết định tài nguyên nào bị đốt (băng thông, bảng trạng thái, CPU)
+Nguồn	Botnet trực tiếp, reflection, hay botnet ứng dụng?	Quyết định cách huy động và cách phòng thủ
+Nguyên tắc bất biến: kẻ tấn công luôn tìm điểm khuếch đại — nơi 1 đơn vị tài nguyên của hắn tạo ra N đơn vị tải lên nạn nhân. Hiểu điểm khuếch đại là hiểu toàn bộ cơ chế.
+
+PHẦN 1 — Cấu trúc tấn công Volumetric (L3/L4)
+1.1 Cơ chế lõi
+Mục tiêu: làm cạn băng thông đường truyền của nạn nhân hoặc làm cạn băng thông thiết bị biên (router, firewall) trước khi gói tin chạm server.
+
+Luồng:
+
+text
+Botnet (N máy) ──gói tin──▶ ISP biên ──▶ Router nạn nhân ──▶ Firewall ──▶ Server
+                  ▲
+                  └── tổng băng thông N × tốc độ mỗi bot
+Điểm nghẽn: đường uplink của nạn nhân. Nếu tổng lưu lượng tấn công > dung lượng uplink → gói tin hợp lệ bị drop trước khi tới server. Server không hề biết — nó chỉ thấy "mất mạng".
+
+1.2 Cấu trúc Reflection/Amplification — cơ chế khuếch đại
+Đây là cấu trúc quan trọng nhất của DDoS hiện đại. Không cần botnet lớn — chỉ cần giả mạo IP nguồn và một danh sách reflector (máy chủ trung gian có giao thức trả lời lớn hơn yêu cầu).
+
+Cơ chế 4 bước:
+
+text
+Bước 1: Kẻ tấn công gửi yêu cầu nhỏ tới reflector (DNS/NTP/memcached/SSDP)
+        với IP nguồn GIẢ MẠO = IP nạn nhân.
+Bước 2: Reflector xử lý, gửi phản hồi LỚN tới IP nguồn (tức nạn nhân).
+Bước 3: Nạn nhân nhận phản hồi lớn từ nhiều reflector cùng lúc.
+Bước 4: Tổng lưu lượng = (số reflector) × (tỷ lệ khuếch đại) × (kích thước yêu cầu).
+Bảng tỷ lệ khuếch đại điển hình:
+
+Giao thức	Cổng	Tỷ lệ khuếch đại	Ghi chú cơ chế
+Memcached	11211	~10.000–50.000x	stats trả về dữ liệu lớn; từng tạo đỉnh 1.7 Tbps (2018)
+NTP (monlist)	123	~200–500x	Lệnh monlist trả danh sách client
+CLDAP	389	~50–70x	LDAP không xác thực trên UDP
+DNS	53	~30–50x	ANY/NSEC record lớn
+SSDP	1900	~30x	UPnP discovery
+CharGen	19	~350x	Giao thức cũ, thường bị chặn
+SNMP	161	~6–30x	Community string mặc định
+Tại sao cấu trúc này mạnh: kẻ tấn công chỉ cần băng thông 1/N so với nạn nhân. Với memcached 50.000x, 1 Mbps yêu cầu → 50 Gbps tấn công. Đây là lý do reflection là xương sống của DDoS volumetric hiện đại.
+
+Phòng thủ đối chiếu:
+
+BCP38 / ingress filtering — chặn gói giả mạo IP nguồn tại ISP. Đây là biện pháp gốc rễ, nhưng triển khai không đồng đều toàn cầu.
+
+Tắt dịch vụ khuếch đại trên reflector (memcached không expose ra Internet, NTP tắt monlist).
+
+Anycast — phân tán lưu lượng tấn công về nhiều PoP, mỗi PoP chỉ chịu một phần.
+
+1.3 Cấu trúc Botnet trực tiếp
+Không dùng reflection — botnet gửi thẳng gói tin.
+
+text
+C2 (Command & Control) ──lệnh──▶ Bot 1..N ──gói tin──▶ Nạn nhân
+Hai kiến trúc C2:
+
+Kiến trúc	Cơ chế	Ưu/nhược
+Tập trung (IRC, HTTP C2)	Bot kết nối tới một server C2 cố định	Dễ điều khiển, dễ bị takedown
+P2P / phi tập trung (Mirai biến thể, Hajime)	Bot trao đổi peer-to-peer, không có server trung tâm	Khó takedown, khó điều khiển chính xác
+Cơ chế lây nhiễm botnet (để hiểu nguồn lực): quét cổng (Telnet 23/2323, SSH 22, TR-069 7547) với mật khẩu mặc định → lây nhiễm IoT/router → bot chờ lệnh. Đây là lý do botnet IoT lớn (Mirai ~600k thiết bị).
+
+PHẦN 2 — Cấu trúc tấn công State-Exhaustion (L4)
+Mục tiêu: làm cạn bảng trạng thái của firewall, load balancer, hoặc stack TCP của server. Không cần băng thông lớn — chỉ cần nhiều kết nối ở trạng thái bán mở.
+
+2.1 Cơ chế SYN flood — giải phẫu bắt tay TCP
+Bắt tay TCP bình thường (3 bước):
+
+text
+Client ──SYN──▶ Server          (Server tạo TCB, đưa vào SYN queue, gửi SYN-ACK)
+Client ◀─SYN-ACK── Server
+Client ──ACK──▶ Server          (Server chuyển TCB sang accept queue, kết nối ESTABLISHED)
+SYN flood:
+
+text
+Bot ──SYN (IP giả)──▶ Server    (Server tạo TCB, gửi SYN-ACK tới IP giả)
+Bot KHÔNG BAO GIỜ gửi ACK       (SYN-ACK đi vào hư không)
+→ TCB nằm trong SYN queue cho tới khi timeout (thường 60–120s)
+→ SYN queue đầy → SYN hợp lệ bị drop
+Điểm nghẽn: backlog của listen socket (SYN queue + accept queue). Khi đầy, kernel drop SYN mới.
+
+Cơ chế phòng thủ — SYN cookies:
+
+text
+Server không tạo TCB ngay khi nhận SYN.
+Thay vào đó: SYN-ACK chứa cookie = hash(IP nguồn, cổng nguồn, cổng đích, secret, timestamp)
+Khi ACK quay lại: server xác minh cookie, TÁI TẠO TCB từ cookie.
+→ Không có trạng thái nào bị giữ trong SYN queue.
+→ Không thể làm cạn bảng trạng thái bằng SYN giả.
+Giới hạn của SYN cookies: mất TCP options (MSS, window scaling, SACK) → giảm hiệu năng. Thường bật khi queue gần đầy, tắt khi bình thường.
+
+2.2 Cơ chế Slowloris — tấn công bằng sự kiên nhẫn
+Không đốt băng thông, không đốt bảng trạng thái lớn — đốt số kết nối đồng thời bằng cách giữ chúng mở với tốc độ cực chậm.
+
+text
+Bot mở N kết nối tới server.
+Mỗi kết nối gửi HTTP header RẤT chậm: "GET / HTTP/1.1\r\n" ... chờ ... "Host: ...\r\n" ... chờ ...
+Server giữ mỗi kết nối trong pool worker (Apache prefork: 1 process/kết nối).
+Khi N = số worker tối đa → server không phục vụ được client hợp lệ.
+Điểm nghẽn: giới hạn worker/thread của web server (Apache prefork, IIS, nginx worker_connections). Với Apache prefork mặc định (150 worker), 150 kết nối Slowloris đủ làm nghẽn.
+
+Phòng thủ đối chiếu:
+
+Timeout header (client_header_timeout trong nginx, RequestReadTimeout trong Apache) — cắt kết nối chậm.
+
+Giới hạn kết nối mỗi IP (limit_conn trong nginx).
+
+Reverse proxy bất đồng bộ (nginx, HAProxy) — một process xử lý nhiều kết nối, không bị block bởi kết nối chậm.
+
+2.3 Cơ chế Slow POST / Slow Read
+Tương tự Slowloris nhưng ở giai đoạn khác:
+
+Slow POST: gửi body cực chậm (Content-Length lớn, gửi từng byte).
+
+Slow Read: đọc response cực chậm, buộc server giữ buffer.
+
+Điểm nghẽn: buffer gửi/nhận của server + thời gian timeout body.
+
+PHẦN 3 — Cấu trúc tấn công Application-Layer (L7)
+Mục tiêu: đốt tài nguyên xử lý (CPU, RAM, database connection, thread) bằng yêu cầu hợp lệ về giao thức nhưng đắt về xử lý. Đây là tầng khó phòng thủ nhất vì lưu lượng trông giống người dùng thật.
+
+3.1 Cơ chế HTTP flood — yêu cầu hợp lệ, tần suất bất thường
+text
+Bot gửi GET /search?q=... hoặc POST /login với tần suất cao.
+Mỗi yêu cầu: parse HTTP → route → query DB → render template → trả về.
+Server đốt CPU + DB connection + RAM cho mỗi yêu cầu.
+Khi request rate > capacity xử lý → latency tăng → timeout → cascade failure.
+Điểm nghẽn: worker/thread pool, database connection pool, CPU.
+
+Biến thể tinh vi:
+
+Cache-busting: thêm query string ngẫu nhiên (?x=12345) để bypass cache CDN, buộc mọi yêu cầu chạm origin.
+
+Nested query (GraphQL): một request chứa truy vấn lồng sâu, đốt CPU gấp trăm lần.
+
+Batch API abuse: một request chứa hàng nghìn thao tác.
+
+3.2 Cơ chế HTTP/2 Rapid Reset (CVE-2023-44487)
+Lợi dụng multiplexing của HTTP/2 — nhiều stream trên một kết nối TCP.
+
+text
+Bot mở 1 kết nối HTTP/2.
+Bot gửi HEADERS (mở stream) rồi ngay lập tức RST_STREAM (huỷ stream).
+Lặp lại hàng nghìn lần/giây trên cùng kết nối.
+Server phải cấp phát tài nguyên cho mỗi stream (state, handler) trước khi huỷ.
+→ Đốt CPU + RAM gấp nhiều lần so với HTTP/1.1.
+Tại sao nguy hiểm: khuếch đại qua multiplexing — 1 kết nối TCP tạo ra hàng nghìn stream. Từng gây tấn công 398 triệu request/giây (Google, 2023).
+
+Phòng thủ: giới hạn max_concurrent_streams, giới hạn tốc độ RST_STREAM, cập nhật server (nginx, Go, Envoy đã vá).
+
+3.3 Cơ chế Botnet ứng dụng — vượt qua phòng thủ L7
+Để vượt challenge (JS, captcha), kẻ tấn công dùng:
+
+Headless browser (Puppeteer, Playwright) — thực thi JS thật.
+
+Proxy dân cư (residential proxy) — IP trông giống người dùng thật.
+
+Tài khoản thật bị chiếm — request có session hợp lệ.
+
+Cơ chế: mỗi bot là một "người dùng thật" về mọi mặt kỹ thuật → phòng thủ phải dựa trên hành vi (tần suất, pattern, fingerprint) chứ không phải chữ ký.
+
+PHẦN 4 — Cấu trúc tổng hợp: một cuộc tấn công đa tầng
+Trong thực tế, DDoS hiện đại thường kết hợp nhiều tầng để vừa đốt băng thông vừa đốt tài nguyên:
+
+text
+Giai đoạn 1: Volumetric (reflection) ──▶ làm cạn băng thông, gây nhiễu loạn
+Giai đoạn 2: State-exhaustion (SYN flood) ──▶ làm cạn bảng trạng thái firewall
+Giai đoạn 3: L7 flood (HTTP/2 Rapid Reset) ──▶ đốt CPU server khi lớp ngoài đã suy yếu
+Mục tiêu: phòng thủ không kịp thích ứng — khi đội vận hành đang xử lý volumetric, L7 đã làm sập origin.
+
+PHẦN 5 — Cấu trúc phòng thủ đối chiếu (theo tầng)
+Tầng	Cơ chế tấn công	Cơ chế phòng thủ	Điểm mấu chốt
+L3/L4 volumetric	Reflection, botnet trực tiếp	Anycast + scrubbing center, RTBH, BCP38	Phân tán lưu lượng + lọc tại biên
+L4 state	SYN flood, Slowloris	SYN cookies, timeout, reverse proxy async	Không giữ trạng thái cho kết nối chưa xác thực
+L7 request	HTTP flood, Rapid Reset	Rate limit, WAF, cache, challenge	Phân biệt người thật vs bot bằng hành vi
+L7 logic	Nested query, batch abuse	Query depth limit, cost analysis, cache	Giới hạn chi phí xử lý mỗi request
+Kiến trúc phòng thủ tổng thể (luồng):
+
+text
+Internet ──▶ Anycast DNS ──▶ Scrubbing center (lọc volumetric)
+         ──▶ CDN/WAF (lọc L7, challenge) ──▶ Load balancer (rate limit)
+         ──▶ Origin (SYN cookies, timeout, giới hạn tài nguyên)
+Nguyên tắc phòng thủ bất biến: mỗi lớp phòng thủ phải giảm tải cho lớp sau, không chỉ chặn. Nếu WAF chặn 99% nhưng vẫn chuyển 1% tới origin, và 1% đó vẫn đủ làm sập origin → phòng thủ thất bại.
+
+PHẦN 6 — Bảng tổng hợp cơ chế theo tài nguyên bị đốt
+Tài nguyên bị đốt	Cơ chế tấn công	Dấu hiệu nhận biết	Phòng thủ gốc
+Băng thông uplink	Volumetric, reflection	Lưu lượng vào tăng vọt, mất gói	Anycast, scrubbing, BCP38
+Bảng trạng thái firewall/NAT	SYN flood, connection flood	Bảng trạng thái đầy, drop hợp lệ	SYN cookies, timeout, giới hạn kết nối
+Số kết nối đồng thời	Slowloris, Slow POST	Kết nối mở lâu, worker cạn	Timeout, reverse proxy async
+CPU xử lý request	HTTP flood, Rapid Reset	CPU 100%, latency tăng	Rate limit, cache, challenge
+Database connection pool	L7 flood, nested query	Connection pool cạn, query chậm	Query limit, cache, connection pool tuning
+RAM buffer	Slow Read, fragmentation	RAM tăng, OOM	Giới hạn buffer, timeout
+Bench notes:
+
+Đây là mô tả cơ chế để hiểu và phòng thủ — không có payload, không có mã tấn công, không có hướng dẫn triển khai.
+
+Nếu cần đi sâu một nhánh cụ thể (ví dụ: cơ chế SYN cookies ở mức kernel, hoặc kiến trúc scrubbing center), nêu nhánh — build tiếp sẽ ship.
+
+Absolute TAZzHub, built by TAZzHub — 6767.
+
